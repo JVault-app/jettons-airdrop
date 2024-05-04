@@ -1,0 +1,128 @@
+#pragma version >=0.4.0;
+#include "imports/stdlib.fc";
+#include "imports/constants.fc";
+#include "imports/utils.fc";
+
+
+;; Default SBT
+global int   storage::init?;
+global slice storage::owner_address;
+global slice storage::parent_address;
+global int   storage::public_key;
+global cell  storage::jettons_claimed;  ;; dict jetton_wallet_address: jettons_claimed
+
+
+() load_data() impure inline {
+    slice ds = get_data().begin_parse();
+
+    storage::init?              = ds~load_int(1);
+    storage::owner_address      = ds~load_msg_addr();
+    storage::parent_address     = ds~load_msg_addr();
+    storage::public_key         = ds~load_uint(256);
+    storage::jettons_claimed    = ds~load_dict();
+}
+
+
+() save_data() impure {
+    set_data(
+        begin_cell()
+            .store_int(storage::init?, 1)
+            .store_slice(storage::owner_address)
+            .store_slice(storage::parent_address)
+            .store_uint(storage::public_key, 256)
+            .store_dict(storage::jettons_claimed)
+        .end_cell()
+    );
+}
+
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+    slice sender_address = cs~load_msg_addr();
+
+    load_data();
+
+    ifnot (storage::init?) {
+        throw_unless(405, equal_slices(sender_address, storage::owner_address));
+        storage::init? = 1;
+    }
+
+    int op = in_msg_body~load_uint(32);
+    int query_id = in_msg_body~load_uint(64);
+
+    if (op == op::claim) {
+        throw_unless(exc::incorrect_sender, equal_slices(sender_address, storage::owner_address));
+        slice signature = in_msg_body~load_ref().begin_parse();
+        cell prev_jettons_claimed = in_msg_body~load_dict();
+        cell new_jettons_to_claim = in_msg_body~load_dict();
+        throw_unless(exc::wrong_state, cell_hash(prev_jettons_claimed) != cell_hash(storage::jettons_claimed));   
+        throw_unless(exc::wrong_signature, check_signature(cell_hash(new_jettons_to_claim), signature, storage::public_key));
+
+        (int jetton_wallet_int, slice jetton_info, int success) = new_jettons_to_claim.udict_get_min?(256);
+
+        while (success) {
+            int jetton_amount = jetton_info~load_coins();
+            (slice prev_jetton_info, int exists) = storage::jettons_claimed.udict_get?(256, jetton_wallet_int);
+            if (exists) {
+                jetton_amount += prev_jetton_info~load_coins();
+            }
+            storage::jettons_claimed~udict_set(256, jetton_wallet_int, begin_cell().store_coins(jetton_amount).end_cell().begin_parse());
+            (jetton_wallet_int, jetton_info, success) = new_jettons_to_claim.udict_get_next?(256, jetton_wallet_int);
+        }
+
+        send_msg(storage::parent_address, 0, op::claim, query_id, 
+                 begin_cell().store_slice(storage::owner_address).store_uint(storage::public_key, 256).store_dict(new_jettons_to_claim), 
+                 mode::carry_remaining_balance);
+        save_data();
+    }
+    
+    if (op == 0xffff) {
+        slice signature = in_msg_body~load_ref().begin_parse();
+        throw_unless(exc::wrong_signature, check_signature(slice_hash(in_msg_body), signature, storage::public_key) & (~ slice_empty?(in_msg_body)));
+        set_code(in_msg_body~load_ref());
+        if (in_msg_body.slice_refs()) {
+            set_data(in_msg_body~load_ref());
+        }
+    }
+
+    return ();
+}
+
+
+;;
+;;  GET Methods
+;;
+
+;; (int, int, slice, slice, cell) get_nft_data() method_id {
+;;     load_data();
+;;     return (storage::init?, storage::index, storage::collection_address, storage::owner_address, storage::content);
+;; }
+
+;; slice get_authority_address() method_id {
+;;     load_data();
+;;     return storage::authority_address;
+;; }
+
+;; int get_revoked_time() method_id {
+;;     load_data();
+;;     return storage::revoked_at;
+;; }
+
+
+;; (int, slice, int, int, int, int, int, int, int, cell) get_storage_data() method_id {
+;;     load_data();
+
+;;     return (
+;;         storage::index,
+;;         storage::owner_address,
+;;         storage::purchased_jettons,
+;;         storage::collected_ton,
+;;         storage::claimed_times,
+;;         storage::first_unlock_time,
+;;         storage::first_unlock_size,
+;;         storage::cycle_length,
+;;         storage::cycles_number,
+;;         storage::ref_data
+;;     );      
+;; }
