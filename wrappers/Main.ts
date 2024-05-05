@@ -1,9 +1,15 @@
 import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode } from '@ton/core';
 
-export type MainConfig = {};
+export type MainConfig = {
+    publicKey: bigint;
+    userContractCode: Cell;
+};
 
 export function mainConfigToCell(config: MainConfig): Cell {
-    return beginCell().endCell();
+    return beginCell()
+        .storeUint(config.publicKey, 256)
+        .storeRef(config.userContractCode)
+    .endCell();
 }
 
 export class Main implements Contract {

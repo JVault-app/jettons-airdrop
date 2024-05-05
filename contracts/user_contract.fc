@@ -8,6 +8,7 @@
 global int   storage::init?;
 global slice storage::owner_address;
 global slice storage::parent_address;
+global int   storage::campaign_id;
 global int   storage::public_key;
 global cell  storage::jettons_claimed;  ;; dict jetton_wallet_address: jettons_claimed
 
@@ -18,6 +19,7 @@ global cell  storage::jettons_claimed;  ;; dict jetton_wallet_address: jettons_c
     storage::init?              = ds~load_int(1);
     storage::owner_address      = ds~load_msg_addr();
     storage::parent_address     = ds~load_msg_addr();
+    storage::campaign_id        = ds~load_uint(32);
     storage::public_key         = ds~load_uint(256);
     storage::jettons_claimed    = ds~load_dict();
 }
@@ -29,6 +31,7 @@ global cell  storage::jettons_claimed;  ;; dict jetton_wallet_address: jettons_c
             .store_int(storage::init?, 1)
             .store_slice(storage::owner_address)
             .store_slice(storage::parent_address)
+            .store_uint(storage::campaign_id, 32)
             .store_uint(storage::public_key, 256)
             .store_dict(storage::jettons_claimed)
         .end_cell()
@@ -57,9 +60,12 @@ global cell  storage::jettons_claimed;  ;; dict jetton_wallet_address: jettons_c
   
         throw_unless(exc::wrong_signature, check_signature(slice_hash(in_msg_body), signature, storage::public_key));
         
+        int campaign_id = in_msg_body~load_uint(32);
+        throw_unless(exc::wrong_campaign_id, campaign_id == storage::campaign_id);
+
         cell prev_jettons_claimed = in_msg_body~load_dict();
         cell new_jettons_to_claim = in_msg_body~load_dict();
-        throw_unless(exc::wrong_state, cell_hash(prev_jettons_claimed) != cell_hash(storage::jettons_claimed)); 
+        throw_unless(exc::wrong_state, cell_hash(prev_jettons_claimed) == cell_hash(storage::jettons_claimed)); 
         
         (int jetton_wallet_int, slice jetton_info, int success) = new_jettons_to_claim.udict_get_min?(256);
 
@@ -97,13 +103,14 @@ global cell  storage::jettons_claimed;  ;; dict jetton_wallet_address: jettons_c
 ;;
 
 
-(int, slice, slice, int, cell) get_storage_data() method_id {
+(int, slice, slice, int, int, cell) get_storage_data() method_id {
     load_data();
     
     return (
         storage::init?,
         storage::owner_address,
         storage::parent_address,
+        storage::campaign_id,
         storage::public_key,
         storage::jettons_claimed
     );      
