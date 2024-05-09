@@ -33,7 +33,7 @@ const int exc::unsupported_op = 0xffff;
 {- GAS (TODO) -}
 
 const int gas::send_jettons = 40000000;
-const int gas::min_reserve  = 20000000;
+const int gas::min_reserve  = 5000000;
 
 {- MESSAGE MODES -}
 
