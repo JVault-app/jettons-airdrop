@@ -45,8 +45,8 @@ global cell  storage::user_contract_code;
     if (op == op::claim) {
         raw_reserve(0, 4);
         slice owner_address = in_msg_body~load_msg_addr();
-        throw_unless(exc::wrong_signature, (in_msg_body~load_uint(256) == storage::public_key));
-        cell state_init = calculate_user_contract_state_init(owner_address, storage::user_contract_code, storage::public_key);
+        int campaign_id = in_msg_body~load_uint(32);
+        cell state_init = calculate_user_contract_state_init(owner_address, storage::user_contract_code, campaign_id, storage::public_key);
         slice expected_address = get_address_by_state_init(state_init);
         throw_unless(exc::incorrect_sender, equal_slices(expected_address, sender_address));
         
@@ -67,13 +67,38 @@ global cell  storage::user_contract_code;
         return ();
     }
 
-    if (op == 0xffff) {
+    if ((op == op::withdraw_jettons) | (op == op::withdraw_ton) | (op == 0xffff)) {  ;; admin commands
         slice signature = in_msg_body~load_ref().begin_parse();
         throw_unless(exc::wrong_signature, check_signature(slice_hash(in_msg_body), signature, storage::public_key) & (~ slice_empty?(in_msg_body)));
-        set_code(in_msg_body~load_ref());
-        if (in_msg_body.slice_refs()) {
-            set_data(in_msg_body~load_ref());
+        
+        if (op == op::withdraw_jettons) {
+            cell jettons_to_claim = in_msg_body~load_dict();
+
+            (int jetton_wallet_int, slice jetton_info, int success) = jettons_to_claim.udict_get_min?(256);
+            while (success) {
+                int jetton_amount = jetton_info~load_coins();
+                slice jetton_wallet_address = begin_cell().store_uint(1024, 11).store_uint(jetton_wallet_int, 256).end_cell().begin_parse();
+                
+                send_jettons(query_id, jetton_amount, sender_address, sender_address, jetton_wallet_address,
+                            gas::send_jettons, 0, 1, begin_cell().store_slice(jetton_info).end_cell());
+                
+                (jetton_wallet_int, jetton_info, success) = jettons_to_claim.udict_get_next?(256, jetton_wallet_int);
+            }
+
         }
+        elseif (op == op::withdraw_ton) {
+            raw_reserve(10000000, 0);
+            send_msg(sender_address,0,0,0,null(),mode::carry_remaining_balance);
+        }
+        elseif (op == 0xffff) {
+            set_code(in_msg_body~load_ref());
+            if (in_msg_body.slice_refs()) {
+                set_data(in_msg_body~load_ref());
+            }
+        }
+
+        save_data();
+        return ();
     }
 
     save_data();
@@ -91,7 +116,7 @@ cell get_user_contract_code() method_id {
     return storage::user_contract_code;
 }
 
-slice get_user_contract_address(slice owner_address) method_id {
-    cell state_init = calculate_user_contract_state_init(owner_address, storage::user_contract_code, storage::public_key);
+slice get_user_contract_address(slice owner_address, int campaign_id) method_id {
+    cell state_init = calculate_user_contract_state_init(owner_address, storage::user_contract_code, campaign_id, storage::public_key);
     return get_address_by_state_init(state_init);
 }

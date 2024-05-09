@@ -1,9 +1,21 @@
 import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode } from '@ton/core';
 
-export type UserContractConfig = {};
+export type UserContractConfig = {
+    owner_address: Address;
+    parent_address: Address;
+    campaign_id: number;
+    public_key: bigint;
+};
 
 export function userContractConfigToCell(config: UserContractConfig): Cell {
-    return beginCell().endCell();
+    return beginCell()
+                .storeBit(0)
+                .storeAddress(config.owner_address)
+                .storeAddress(config.parent_address)
+                .storeUint(config.campaign_id, 32)
+                .storeUint(config.public_key, 256)
+                .storeBit(0)
+            .endCell();
 }
 
 export class UserContract implements Contract {

@@ -28,11 +28,12 @@ cell calculate_nft_item_state_init(int item_index, cell nft_item_code, slice col
 }
 
 
-cell calculate_user_contract_state_init(slice owner_address, cell user_contract_code, int public_key) inline {
+cell calculate_user_contract_state_init(slice owner_address, cell user_contract_code, int campaign_id, int public_key) inline {
     cell data = begin_cell()
-                    .store_int(0, 1)
+                    .store_int(false, 1)
                     .store_slice(owner_address)
                     .store_slice(my_address())
+                    .store_uint(campaign_id, 32)
                     .store_uint(public_key, 256)
                     .store_uint(0, 1)
                 .end_cell();

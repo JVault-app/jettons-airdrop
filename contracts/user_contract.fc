@@ -48,7 +48,10 @@ global cell  storage::jettons_claimed;  ;; dict jetton_wallet_address: jettons_c
 
     ifnot (storage::init?) {
         throw_unless(405, equal_slices(sender_address, storage::owner_address));
-        storage::init? = 1;
+        storage::init? = true;
+    }
+    if (in_msg_body.slice_empty?()) {
+        return ();
     }
 
     int op = in_msg_body~load_uint(32);
@@ -62,27 +65,41 @@ global cell  storage::jettons_claimed;  ;; dict jetton_wallet_address: jettons_c
         
         int campaign_id = in_msg_body~load_uint(32);
         throw_unless(exc::wrong_campaign_id, campaign_id == storage::campaign_id);
+        
+        slice sign_user_address = in_msg_body~load_msg_addr();
+        throw_unless(exc::wrong_signature, equal_slices(sign_user_address, storage::owner_address));
 
         cell prev_jettons_claimed = in_msg_body~load_dict();
         cell new_jettons_to_claim = in_msg_body~load_dict();
-        throw_unless(exc::wrong_state, cell_hash(prev_jettons_claimed) == cell_hash(storage::jettons_claimed)); 
-        
+
         (int jetton_wallet_int, slice jetton_info, int success) = new_jettons_to_claim.udict_get_min?(256);
-
-        while (success) {
-            int jetton_amount = jetton_info~load_coins();
-            (slice prev_jetton_info, int exists) = storage::jettons_claimed.udict_get?(256, jetton_wallet_int);
-            if (exists) {
-                jetton_amount += prev_jetton_info~load_coins();
+        
+        ifnot (null?(storage::jettons_claimed)) {
+            throw_unless(exc::wrong_state, cell_hash(prev_jettons_claimed) == cell_hash(storage::jettons_claimed)); 
+            while (success) {
+                int jetton_amount = jetton_info~load_coins();
+                (slice prev_jetton_info, int exists) = storage::jettons_claimed.udict_get?(256, jetton_wallet_int);
+                if (exists) {
+                    jetton_amount += prev_jetton_info~load_coins();
+                }
+                storage::jettons_claimed~udict_set(256, jetton_wallet_int, begin_cell().store_coins(jetton_amount).end_cell().begin_parse());
+                (jetton_wallet_int, jetton_info, success) = new_jettons_to_claim.udict_get_next?(256, jetton_wallet_int);
             }
-            storage::jettons_claimed~udict_set(256, jetton_wallet_int, begin_cell().store_coins(jetton_amount).end_cell().begin_parse());
-            (jetton_wallet_int, jetton_info, success) = new_jettons_to_claim.udict_get_next?(256, jetton_wallet_int);
         }
-
+        else {
+            while (success) {
+                int jetton_amount = jetton_info~load_coins();
+                storage::jettons_claimed~udict_set(256, jetton_wallet_int, begin_cell().store_coins(jetton_amount).end_cell().begin_parse());
+                (jetton_wallet_int, jetton_info, success) = new_jettons_to_claim.udict_get_next?(256, jetton_wallet_int);
+            }
+        }
+        
         send_msg(storage::parent_address, 0, op::claim, query_id, 
-                 begin_cell().store_slice(storage::owner_address).store_uint(storage::public_key, 256).store_dict(new_jettons_to_claim), 
+                 begin_cell().store_slice(storage::owner_address).store_uint(storage::campaign_id, 32).store_dict(new_jettons_to_claim), 
                  mode::carry_remaining_balance);
+
         save_data();
+        return ();
     }
     
     if (op == 0xffff) {
@@ -92,15 +109,16 @@ global cell  storage::jettons_claimed;  ;; dict jetton_wallet_address: jettons_c
         if (in_msg_body.slice_refs()) {
             set_data(in_msg_body~load_ref());
         }
+        return ();
     }
-
-    return ();
 }
 
 
-;;
-;;  GET Methods
-;;
+
+int get_public_key() method_id {
+    load_data();
+    return storage::public_key;
+}
 
 
 (int, slice, slice, int, int, cell) get_storage_data() method_id {
