@@ -3,12 +3,14 @@ import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, 
 export type MainConfig = {
     publicKey: bigint;
     userContractCode: Cell;
+    adminAddress: Address;
 };
 
 export function mainConfigToCell(config: MainConfig): Cell {
     return beginCell()
         .storeUint(config.publicKey, 256)
         .storeRef(config.userContractCode)
+        .storeAddress(config.adminAddress)
     .endCell();
 }
 
